@@ -1,9 +1,11 @@
 {
   "name": "decision-lab-video",
   "version": "1.0.0",
+  "description": "decision-lab release video — Agentic Decision Science with PI/Researcher workflow",
   "scripts": {
-    "studio": "npx remotion studio",
-    "render": "npx remotion render DecisionLabDemo"
+    "start": "npx remotion studio",
+    "render": "npx remotion render src/index.js DecisionLabDemo out/video.mp4",
+    "render:gif": "npx remotion render --image-format png --codec gif src/index.js DecisionLabDemo out/video.gif"
   },
   "dependencies": {
     "@remotion/bundler": "4.0.436",

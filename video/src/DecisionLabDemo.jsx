@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  AbsoluteFill,
   useCurrentFrame,
   useVideoConfig,
   interpolate,
@@ -24,673 +25,912 @@ const C = {
   purple: "#d2a8ff",
 };
 
+const FONT = "'SF Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace";
+const SANS = "'Inter', 'Helvetica Neue', 'Segoe UI', sans-serif";
+
 // ─── Primitives ───
 
-const TypedText = ({ text, startFrame, speed = 2, color = C.text, bold = false }) => {
+const TypedText = ({ text, startFrame, speed = 1.0, color = C.text, fontSize = 28, font = FONT }) => {
   const frame = useCurrentFrame();
   const elapsed = frame - startFrame;
   if (elapsed < 0) return null;
-  const chars = Math.min(Math.floor(elapsed * speed), text.length);
+
+  let charIndex = 0;
+  let budget = elapsed * speed;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    let cost = 1;
+    if (ch === "." || ch === "?" || ch === "!") cost = 5;
+    else if (ch === "," || ch === "—" || ch === ";") cost = 3;
+    else if (ch === " ") cost = 1.3;
+    budget -= cost;
+    if (budget < 0) break;
+    charIndex = i + 1;
+  }
+  charIndex = Math.min(charIndex, text.length);
+
   return (
-    <span style={{ color, fontWeight: bold ? 700 : 400 }}>
-      {text.slice(0, chars)}
-      {chars < text.length && (
-        <span style={{ opacity: Math.sin(frame * 0.3) > 0 ? 1 : 0, color: C.green }}>▊</span>
+    <span style={{ color, fontSize, fontFamily: font, lineHeight: 1.6 }}>
+      {text.slice(0, charIndex)}
+      {charIndex < text.length && (
+        <span style={{ opacity: Math.sin(frame * 0.25) > 0 ? 1 : 0, color: C.green }}>▊</span>
       )}
     </span>
   );
 };
 
-const Line = ({ children, at }) => {
+const FadeIn = ({ children, delay = 0, duration = 15 }) => {
   const frame = useCurrentFrame();
-  if (frame < at) return null;
-  const opacity = interpolate(frame - at, [0, 4], [0, 1], { extrapolateRight: "clamp" });
-  return <div style={{ minHeight: "1.5em", opacity }}>{children}</div>;
+  const opacity = interpolate(frame - delay, [0, duration], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const y = interpolate(frame - delay, [0, duration], [24, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  return <div style={{ opacity, transform: `translateY(${y}px)` }}>{children}</div>;
 };
 
-const Badge = ({ label, color, icon }) => (
-  <span
-    style={{
-      background: `${color}18`,
-      color,
-      border: `1px solid ${color}50`,
-      padding: "2px 10px",
-      borderRadius: "4px",
-      fontSize: "13px",
-      fontWeight: 700,
-      marginRight: "10px",
-      letterSpacing: "0.5px",
-    }}
-  >
-    {icon && <span style={{ marginRight: "5px" }}>{icon}</span>}
-    {label}
-  </span>
-);
-
-const Spinner = ({ startFrame, duration = 60 }) => {
-  const frame = useCurrentFrame();
-  const elapsed = frame - startFrame;
-  if (elapsed < 0 || elapsed > duration) return null;
-  const chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  return <span style={{ color: C.cyan }}>{chars[Math.floor(elapsed / 3) % chars.length]}</span>;
-};
-
-const ProgressBar = ({ startFrame, duration = 40, width = 30 }) => {
-  const frame = useCurrentFrame();
-  const elapsed = frame - startFrame;
-  if (elapsed < 0) return null;
-  const progress = Math.min(elapsed / duration, 1);
-  const filled = Math.floor(progress * width);
+const Badge = ({ label, color, icon, size = "md" }) => {
+  const s = size === "lg" ? { fs: 22, px: 16, py: 6 } : { fs: 18, px: 12, py: 4 };
   return (
-    <span>
-      <span style={{ color: C.green }}>{"█".repeat(filled)}</span>
-      <span style={{ color: C.dimmed }}>{"░".repeat(width - filled)}</span>
-      <span style={{ color: C.text }}> {Math.floor(progress * 100)}%</span>
-    </span>
-  );
-};
-
-// ─── Bar Chart Component ───
-
-const BarChart = ({ startFrame, data }) => {
-  const frame = useCurrentFrame();
-  const elapsed = frame - startFrame;
-  if (elapsed < 0) return null;
-
-  const maxVal = Math.max(...data.map((d) => d.value));
-  const barMaxWidth = 480;
-
-  return (
-    <div style={{ padding: "8px 0 0 20px" }}>
-      {data.map((d, i) => {
-        const delay = i * 6;
-        const barProgress = interpolate(elapsed - delay, [0, 20], [0, 1], {
-          extrapolateLeft: "clamp",
-          extrapolateRight: "clamp",
-        });
-        const barWidth = (d.value / maxVal) * barMaxWidth * barProgress;
-        return (
-          <div
-            key={d.label}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              marginBottom: "6px",
-              opacity: elapsed > delay ? 1 : 0,
-            }}
-          >
-            <span
-              style={{
-                color: C.dimmed,
-                width: "130px",
-                textAlign: "right",
-                marginRight: "12px",
-                fontSize: "14px",
-              }}
-            >
-              {d.label}
-            </span>
-            <div
-              style={{
-                height: "22px",
-                width: `${barWidth}px`,
-                background: `linear-gradient(90deg, ${d.color}cc, ${d.color})`,
-                borderRadius: "3px",
-                transition: "width 0.1s",
-              }}
-            />
-            <span
-              style={{
-                color: C.white,
-                marginLeft: "10px",
-                fontSize: "14px",
-                fontWeight: 600,
-                opacity: barProgress > 0.8 ? 1 : 0,
-              }}
-            >
-              {d.pct}
-            </span>
-            {d.note && barProgress > 0.9 && (
-              <span style={{ color: d.noteColor || C.dimmed, marginLeft: "10px", fontSize: "12px" }}>
-                {d.note}
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// ─── Parallel Agent Panel ───
-
-const AgentPanel = ({ label, number, color, status, statusColor, detail, at }) => {
-  const frame = useCurrentFrame();
-  if (frame < at) return null;
-  const slideIn = interpolate(frame - at, [0, 10], [30, 0], { extrapolateRight: "clamp" });
-  const opacity = interpolate(frame - at, [0, 8], [0, 1], { extrapolateRight: "clamp" });
-
-  return (
-    <div
+    <span
       style={{
-        background: C.panel,
-        border: `1px solid ${color}40`,
-        borderRadius: "8px",
-        padding: "12px 16px",
-        width: "270px",
-        opacity,
-        transform: `translateY(${slideIn}px)`,
+        background: `${color}20`,
+        color,
+        border: `1.5px solid ${color}60`,
+        padding: `${s.py}px ${s.px}px`,
+        borderRadius: "6px",
+        fontSize: s.fs,
+        fontWeight: 700,
+        marginRight: "14px",
+        letterSpacing: "0.5px",
+        fontFamily: FONT,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", marginBottom: "6px" }}>
-        <span style={{ color, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px" }}>
-          GRAD STUDENT {number}
-        </span>
-      </div>
-      <div style={{ color: C.text, fontSize: "13px", marginBottom: "4px" }}>{label}</div>
-      {detail && <div style={{ color: C.dimmed, fontSize: "11px", marginBottom: "6px" }}>{detail}</div>}
-      {status && (
-        <div
-          style={{
-            display: "inline-block",
-            background: `${statusColor}18`,
-            color: statusColor,
-            border: `1px solid ${statusColor}50`,
-            padding: "1px 8px",
-            borderRadius: "3px",
-            fontSize: "11px",
-            fontWeight: 600,
-          }}
-        >
-          {status}
-        </div>
-      )}
-    </div>
+      {icon && <span style={{ marginRight: "6px" }}>{icon}</span>}
+      {label}
+    </span>
   );
 };
 
-// ─── Main Component ───
-
-export const DecisionLabDemo = () => {
+const Scene = ({ children, fadeOut: fo = true }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-
-  const fadeIn = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: "clamp" });
-  const fadeOut = interpolate(frame, [1160, 1200], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-
-  // Scroll the terminal content as the session progresses
-  const scrollY = interpolate(
-    frame,
-    [0, 90, 180, 350, 480, 600, 720, 860, 980, 1060],
-    [0, 0, -80, -300, -560, -780, -1020, -1350, -1680, -1900],
-    { extrapolateRight: "clamp" }
+  const { durationInFrames } = useVideoConfig();
+  const fadeOutOp = fo
+    ? interpolate(frame, [durationInFrames - 18, durationInFrames], [1, 0], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      })
+    : 1;
+  const fadeInOp = interpolate(frame, [0, 15], [0, 1], { extrapolateRight: "clamp" });
+  return (
+    <AbsoluteFill style={{ backgroundColor: C.bg, opacity: fadeInOp * fadeOutOp }}>
+      {children}
+    </AbsoluteFill>
   );
+};
 
-  // Show the chart overlay in the final section
-  const showChart = frame >= 920;
-  const chartOpacity = interpolate(frame, [920, 940], [0, 1], {
+const TerminalChrome = ({ children, title = "decision-lab — ~/analysis" }) => (
+  <div
+    style={{
+      margin: "40px 60px",
+      flex: 1,
+      display: "flex",
+      flexDirection: "column",
+      border: `1px solid ${C.border}`,
+      borderRadius: "12px",
+      overflow: "hidden",
+    }}
+  >
+    <div
+      style={{
+        height: "52px",
+        background: C.panel,
+        display: "flex",
+        alignItems: "center",
+        padding: "0 24px",
+        gap: "10px",
+        borderBottom: `1px solid ${C.border}`,
+        flexShrink: 0,
+      }}
+    >
+      <div style={{ width: 14, height: 14, borderRadius: "50%", background: C.red }} />
+      <div style={{ width: 14, height: 14, borderRadius: "50%", background: C.yellow }} />
+      <div style={{ width: 14, height: 14, borderRadius: "50%", background: C.green }} />
+      <span style={{ color: C.dimmed, marginLeft: "20px", fontSize: "18px", fontFamily: FONT }}>{title}</span>
+      <span style={{ color: C.dimmed, fontSize: "16px", fontFamily: FONT, marginLeft: "auto" }}>dlab v0.1</span>
+    </div>
+    <div style={{ flex: 1, padding: "36px 48px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      {children}
+    </div>
+  </div>
+);
+
+// ─── Animated Bezier Path (SVG stroke-dashoffset) ───
+
+const AnimatedPath = ({ d, color, startFrame, drawDuration = 30, strokeWidth = 3, dashed = false }) => {
+  const frame = useCurrentFrame();
+  const elapsed = frame - startFrame;
+  if (elapsed < 0) return null;
+
+  const pathLength = 1000; // approximate
+  const progress = interpolate(elapsed, [0, drawDuration], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
 
   return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        backgroundColor: C.bg,
-        fontFamily: "'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace",
-        fontSize: "15px",
-        lineHeight: "1.55",
-        opacity: fadeIn * fadeOut,
-        overflow: "hidden",
-        position: "relative",
-      }}
-    >
-      {/* ─── Terminal Chrome ─── */}
-      <div
-        style={{
-          height: "40px",
-          background: C.panel,
-          display: "flex",
-          alignItems: "center",
-          padding: "0 18px",
-          gap: "8px",
-          borderBottom: `1px solid ${C.border}`,
-          position: "relative",
-          zIndex: 10,
-        }}
-      >
-        <div style={{ width: 12, height: 12, borderRadius: "50%", background: C.red }} />
-        <div style={{ width: 12, height: 12, borderRadius: "50%", background: C.yellow }} />
-        <div style={{ width: 12, height: 12, borderRadius: "50%", background: C.green }} />
-        <span style={{ color: C.dimmed, marginLeft: "20px", fontSize: "13px" }}>
-          decision-lab — ~/analysis
-        </span>
-        <span style={{ color: C.dimmed, fontSize: "13px", marginLeft: "auto" }}>
-          dlab v0.1
-        </span>
-      </div>
+    <path
+      d={d}
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeDasharray={dashed ? "12,8" : pathLength}
+      strokeDashoffset={dashed ? 0 : pathLength * (1 - progress)}
+      opacity={interpolate(elapsed, [0, 8], [0, 1], { extrapolateRight: "clamp" })}
+    />
+  );
+};
 
-      {/* ─── Scrolling Terminal Content ─── */}
-      <div
-        style={{
-          padding: "24px 36px",
-          transform: `translateY(${scrollY}px)`,
-        }}
-      >
-        {/* ═══ SCENE 1: User types the question (0-80) ═══ */}
-        <Line at={5}>
-          <span style={{ color: C.green }}>❯ </span>
-          <span style={{ color: C.cyan }}>dlab</span>
-          <span style={{ color: C.dimmed }}> --dpack </span>
-          <span style={{ color: C.orange }}>mmm</span>
-          <span style={{ color: C.dimmed }}> --data </span>
-          <span style={{ color: C.text }}>./ad-spend.csv</span>
-        </Line>
+// ─── Graph Node ───
 
-        <Line at={30}>
-          <span style={{ color: C.dimmed }}>  prompt: </span>
-          <TypedText
-            text="We doubled Q4 ad spend but sales barely moved. What's working and what's wasted?"
-            startFrame={30}
-            speed={2.2}
-            color={C.white}
-          />
-        </Line>
+const GraphNode = ({ x, y, width, height, label, sublabel, color, borderColor, startFrame, status, statusColor, icon }) => {
+  const frame = useCurrentFrame();
+  const elapsed = frame - startFrame;
+  if (elapsed < 0) return null;
 
-        {/* ═══ SCENE 2: Professor plans (80-170) ═══ */}
-        <Line at={85}>
-          <span>{""}</span>
-        </Line>
-        <Line at={90}>
-          <Badge label="PROFESSOR" color={C.blue} icon="🎓" />
-          <span style={{ color: C.white, fontWeight: 600 }}>Designing research agenda...</span>
-        </Line>
+  const scale = interpolate(elapsed, [0, 12], [0.7, 1], { extrapolateRight: "clamp" });
+  const opacity = interpolate(elapsed, [0, 12], [0, 1], { extrapolateRight: "clamp" });
 
-        <Line at={110}>
-          <span style={{ color: C.dimmed }}>  │</span>
-        </Line>
-        <Line at={115}>
-          <span style={{ color: C.dimmed }}>  ├─ </span>
-          <span style={{ color: C.text }}>Load & validate 2 years of weekly channel spend + revenue</span>
-        </Line>
-        <Line at={125}>
-          <span style={{ color: C.dimmed }}>  ├─ </span>
-          <span style={{ color: C.text }}>Fan out 3 grad students with different modeling strategies</span>
-        </Line>
-        <Line at={135}>
-          <span style={{ color: C.dimmed }}>  ├─ </span>
-          <span style={{ color: C.text }}>Each must pass convergence + posterior predictive checks</span>
-        </Line>
-        <Line at={145}>
-          <span style={{ color: C.dimmed }}>  ├─ </span>
-          <span style={{ color: C.text }}>Consolidate results — only trust where paths agree</span>
-        </Line>
-        <Line at={155}>
-          <span style={{ color: C.dimmed }}>  └─ </span>
-          <span style={{ color: C.yellow }}>If paths diverge: report "insufficient evidence"</span>
-        </Line>
-
-        {/* ═══ SCENE 3: Data prep (170-270) ═══ */}
-        <Line at={175}>
-          <span>{""}</span>
-        </Line>
-        <Line at={180}>
-          <Badge label="DATA PREP" color={C.cyan} icon="📋" />
-          <span style={{ color: C.text }}>Loading marketing data... </span>
-          {frame >= 180 && frame < 210 && <Spinner startFrame={180} duration={30} />}
-        </Line>
-
-        <Line at={215}>
-          <span style={{ color: C.green }}>  ✓ </span>
-          <span style={{ color: C.text }}>
-            <span style={{ color: C.white, fontWeight: 600 }}>104 weeks</span> across{" "}
-            <span style={{ color: C.white, fontWeight: 600 }}>6 channels</span>
-            <span style={{ color: C.dimmed }}> — TV, Paid Search, Social, Display, Email, Affiliates</span>
-          </span>
-        </Line>
-
-        <Line at={235}>
-          <span>{""}</span>
-        </Line>
-        <Line at={240}>
-          <Badge label="DATA PREP" color={C.cyan} icon="📋" />
-          <span style={{ color: C.yellow }}>⚠ Anomaly detected</span>
-        </Line>
-        <Line at={250}>
-          <span style={{ color: C.yellow }}>
-            {"    "}Paid Search shows $0 for weeks 38-41 — unlikely during Q4 ramp
-          </span>
-        </Line>
-        <Line at={262}>
-          <span style={{ color: C.green }}>    ✓ </span>
-          <span style={{ color: C.text }}>Imputed from adjacent weeks via rolling median</span>
-        </Line>
-
-        {/* ═══ SCENE 4: Parallel grad students fan out (270-480) ═══ */}
-        <Line at={280}>
-          <span>{""}</span>
-        </Line>
-        <Line at={285}>
-          <Badge label="PROFESSOR" color={C.blue} icon="🎓" />
-          <span style={{ color: C.white, fontWeight: 600 }}>
-            Dispatching 3 grad students in parallel
-          </span>
-        </Line>
-
-        {/* Three agent panels side by side */}
-        <Line at={300}>
-          <div style={{ display: "flex", gap: "16px", margin: "10px 0 10px 20px" }}>
-            <AgentPanel
-              number="1"
-              label="Informative priors"
-              detail="Hierarchical model + industry benchmarks"
-              color={C.purple}
-              status={frame >= 420 ? "✓ CONVERGED — R̂ 1.01" : frame >= 350 ? "Sampling..." : "Starting..."}
-              statusColor={frame >= 420 ? C.green : C.cyan}
-              at={305}
-            />
-            <AgentPanel
-              number="2"
-              label="Weakly informative priors"
-              detail="Additive model + broad priors"
-              color={C.orange}
-              status={
-                frame >= 520
-                  ? "✓ CONVERGED (retry) — R̂ 1.02"
-                  : frame >= 440
-                  ? "↩ Revising..."
-                  : frame >= 400
-                  ? "✗ DIVERGENT — R̂ 2.4"
-                  : frame >= 350
-                  ? "Sampling..."
-                  : "Starting..."
-              }
-              statusColor={
-                frame >= 520 ? C.green : frame >= 440 ? C.yellow : frame >= 400 ? C.red : C.cyan
-              }
-              at={315}
-            />
-            <AgentPanel
-              number="3"
-              label="Flat priors + events"
-              detail="Saturating model + holiday calendar"
-              color={C.magenta}
-              status={frame >= 430 ? "✓ CONVERGED — R̂ 1.01" : frame >= 350 ? "Sampling..." : "Starting..."}
-              statusColor={frame >= 430 ? C.green : C.cyan}
-              at={325}
-            />
-          </div>
-        </Line>
-
-        {/* Fitting progress */}
-        <Line at={350}>
-          <span style={{ color: C.dimmed }}>  </span>
-          {frame >= 350 && <ProgressBar startFrame={350} duration={50} width={50} />}
-        </Line>
-
-        {/* Grad student 2 fails */}
-        <Line at={410}>
-          <span>{""}</span>
-        </Line>
-        <Line at={415}>
-          <Badge label="GRAD STUDENT 2" color={C.orange} />
-          <span style={{ color: C.red, fontWeight: 600 }}>✗ Posterior Predictive Check FAILED</span>
-        </Line>
-        <Line at={428}>
-          <span style={{ color: C.red }}>
-            {"    "}Model under-predicts holiday weeks by 22% — missing seasonal structure
-          </span>
-        </Line>
-
-        {/* Professor sends back */}
-        <Line at={448}>
-          <span>{""}</span>
-        </Line>
-        <Line at={453}>
-          <Badge label="PROFESSOR" color={C.blue} icon="🎓" />
-          <span style={{ color: C.yellow, fontWeight: 600 }}>↩ Revision for Grad Student 2</span>
-        </Line>
-        <Line at={465}>
-          <span style={{ color: C.yellow }}>
-            {"    "}Add Black Friday + Christmas event dummies and re-fit
-          </span>
-        </Line>
-
-        {/* Re-fit progress */}
-        <Line at={485}>
-          <Badge label="GRAD STUDENT 2" color={C.orange} />
-          <span style={{ color: C.text }}>Re-fitting with holiday effects... </span>
-          {frame >= 485 && frame < 515 && <Spinner startFrame={485} duration={30} />}
-        </Line>
-
-        <Line at={520}>
-          <span style={{ color: C.green }}>  ✓ </span>
-          <span style={{ color: C.text }}>Converged on retry — R̂ 1.02, PPC passed</span>
-        </Line>
-
-        {/* ═══ SCENE 5: Dissertation Defense (540-700) ═══ */}
-        <Line at={545}>
-          <span>{""}</span>
-        </Line>
-        <Line at={550}>
-          <div
-            style={{
-              background: `${C.green}10`,
-              border: `1px solid ${C.green}40`,
-              borderRadius: "8px",
-              padding: "12px 18px",
-              display: "inline-block",
-            }}
+  return (
+    <g transform={`translate(${x}, ${y})`} opacity={opacity}>
+      <g transform={`scale(${scale})`} style={{ transformOrigin: `${width / 2}px ${height / 2}px` }}>
+        {/* Glow behind node */}
+        <rect
+          x={-4} y={-4}
+          width={width + 8} height={height + 8}
+          rx={16}
+          fill="none"
+          stroke={borderColor || color}
+          strokeWidth={1}
+          opacity={0.3}
+          filter="url(#nodeGlow)"
+        />
+        {/* Node background */}
+        <rect
+          width={width} height={height}
+          rx={14}
+          fill={C.panel}
+          stroke={borderColor || color}
+          strokeWidth={2}
+        />
+        {/* Icon */}
+        {icon && (
+          <text x={20} y={height / 2 + 7} fontSize={22} fill={color}>{icon}</text>
+        )}
+        {/* Label */}
+        <text
+          x={icon ? 50 : 20}
+          y={sublabel ? height / 2 - 4 : height / 2 + 6}
+          fontSize={18}
+          fontWeight={700}
+          fill={color}
+          fontFamily={FONT}
+        >
+          {label}
+        </text>
+        {sublabel && (
+          <text
+            x={icon ? 50 : 20}
+            y={height / 2 + 18}
+            fontSize={14}
+            fill={C.dimmed}
+            fontFamily={FONT}
           >
-            <Badge label="DISSERTATION DEFENSE" color={C.green} icon="⚖" />
-            <span style={{ color: C.white, fontWeight: 600 }}>
-              Consolidating 3 analytical paths
-            </span>
-          </div>
-        </Line>
-
-        <Line at={575}>
-          <span style={{ color: C.green }}>  ✓ </span>
-          <span style={{ color: C.text }}>
-            All 3 grad students converged (1 after revision)
-          </span>
-        </Line>
-        <Line at={590}>
-          <span style={{ color: C.green }}>  ✓ </span>
-          <span style={{ color: C.text }}>
-            Channel rankings agree across all 3 approaches
-          </span>
-        </Line>
-        <Line at={605}>
-          <span style={{ color: C.green }}>  ✓ </span>
-          <span style={{ color: C.text }}>
-            Saturation curves consistent within credible intervals
-          </span>
-        </Line>
-
-        <Line at={625}>
-          <span>{""}</span>
-        </Line>
-        <Line at={630}>
-          <Badge label="PROFESSOR" color={C.blue} icon="🎓" />
-          <span style={{ color: C.white, fontWeight: 700 }}>
-            Verdict: Strong consensus — recommendation is robust
-          </span>
-        </Line>
-
-        {/* ═══ SCENE 6: Results + Channel Chart (650-920) ═══ */}
-        <Line at={660}>
-          <span>{""}</span>
-        </Line>
-        <Line at={665}>
-          <span
-            style={{
-              color: C.white,
-              fontWeight: 700,
-              fontSize: "17px",
-              borderBottom: `2px solid ${C.blue}`,
-              paddingBottom: "4px",
-            }}
-          >
-            Channel Contribution — Consensus Across All 3 Models
-          </span>
-        </Line>
-
-        <Line at={680}>
-          <BarChart
-            startFrame={685}
-            data={[
-              { label: "Paid Search", value: 34, pct: "34%", color: C.green, note: "ROAS 4.2x ↑", noteColor: C.green },
-              { label: "TV", value: 24, pct: "24%", color: C.cyan, note: "saturating ↓", noteColor: C.yellow },
-              { label: "Social", value: 15, pct: "15%", color: C.magenta, note: "growing ↑", noteColor: C.green },
-              { label: "Email", value: 13, pct: "13%", color: C.blue },
-              { label: "Display", value: 9, pct: "9%", color: C.orange, note: "ROAS 0.8x ↓", noteColor: C.red },
-              { label: "Affiliates", value: 5, pct: "5%", color: C.dimmed },
-            ]}
-          />
-        </Line>
-
-        {/* Key insight */}
-        <Line at={810}>
-          <span>{""}</span>
-        </Line>
-        <Line at={815}>
-          <div
-            style={{
-              background: `${C.blue}10`,
-              border: `1px solid ${C.blue}40`,
-              borderRadius: "8px",
-              padding: "14px 20px",
-              maxWidth: "800px",
-            }}
-          >
-            <div style={{ color: C.white, fontWeight: 700, marginBottom: "8px", fontSize: "16px" }}>
-              Key Finding
-            </div>
-            <TypedText
-              text="TV spend hit saturation — doubling the budget yielded only 8% incremental lift. Meanwhile Paid Search has 2.3x headroom before diminishing returns."
-              startFrame={820}
-              speed={1.8}
-              color={C.text}
+            {sublabel}
+          </text>
+        )}
+        {/* Status badge */}
+        {status && (
+          <g>
+            <rect
+              x={width - 140} y={height / 2 - 12}
+              width={130} height={24}
+              rx={5}
+              fill={`${statusColor}20`}
+              stroke={`${statusColor}60`}
+              strokeWidth={1}
             />
-          </div>
-        </Line>
+            <text
+              x={width - 75} y={height / 2 + 4}
+              fontSize={12}
+              fontWeight={700}
+              fill={statusColor}
+              fontFamily={FONT}
+              textAnchor="middle"
+            >
+              {status}
+            </text>
+          </g>
+        )}
+      </g>
+    </g>
+  );
+};
 
-        <Line at={885}>
-          <div
-            style={{
-              background: `${C.green}10`,
-              border: `1px solid ${C.green}40`,
-              borderRadius: "8px",
-              padding: "14px 20px",
-              maxWidth: "800px",
-              marginTop: "8px",
-            }}
-          >
-            <div style={{ color: C.green, fontWeight: 700, marginBottom: "8px", fontSize: "16px" }}>
-              Recommendation
-            </div>
-            <TypedText
-              text="Shift 30% of TV budget → Paid Search & Social. Estimated revenue impact: +19% (95% CI: +12% to +27%)."
-              startFrame={890}
-              speed={1.8}
-              color={C.text}
-            />
-          </div>
-        </Line>
+// ═══════════════════════════════════════════
+// SCENE 1: Opening hook
+// ═══════════════════════════════════════════
 
-        <Line at={960}>
-          <span style={{ color: C.dimmed, fontSize: "13px" }}>
-            {"    "}3 models • 3 convergent paths • 24,000 posterior samples • 6 channels decomposed
-          </span>
-        </Line>
+const SceneHook = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
 
-        {/* Reports saved */}
-        <Line at={990}>
-          <span>{""}</span>
-        </Line>
-        <Line at={995}>
-          <span style={{ color: C.green }}>  ✓ </span>
-          <span style={{ color: C.text }}>Report saved → </span>
-          <span style={{ color: C.cyan }}>./analysis-001/report.html</span>
-        </Line>
-        <Line at={1005}>
-          <span style={{ color: C.green }}>  ✓ </span>
-          <span style={{ color: C.text }}>Figures saved → </span>
-          <span style={{ color: C.cyan }}>./analysis-001/figures/</span>
-        </Line>
-        <Line at={1015}>
-          <span style={{ color: C.green }}>  ✓ </span>
-          <span style={{ color: C.text }}>Session cost: </span>
-          <span style={{ color: C.white, fontWeight: 600 }}>$2.34</span>
-          <span style={{ color: C.dimmed }}> (4m 12s)</span>
-        </Line>
+  const textScale = spring({ frame, fps, config: { damping: 80, stiffness: 150, mass: 0.8 } });
+  const glowIntensity = interpolate(Math.sin(frame * 0.08), [-1, 1], [15, 45]);
 
-        {/* Prompt returns */}
-        <Line at={1040}>
-          <span>{""}</span>
-        </Line>
-        <Line at={1045}>
-          <span style={{ color: C.green }}>❯ </span>
-          <span style={{ opacity: Math.sin(frame * 0.3) > 0 ? 1 : 0, color: C.green }}>▊</span>
-        </Line>
-      </div>
-
-      {/* ─── Outro overlay ─── */}
-      {frame >= 1080 && (
+  return (
+    <Scene>
+      <AbsoluteFill style={{ justifyContent: "center", alignItems: "center" }}>
         <div
           style={{
             position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: C.bg,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: interpolate(frame, [1080, 1110], [0, 1], {
+            width: 900,
+            height: 900,
+            borderRadius: "50%",
+            background: `radial-gradient(circle, rgba(88,166,255,${glowIntensity / 400}) 0%, transparent 70%)`,
+            filter: `blur(${glowIntensity}px)`,
+          }}
+        />
+        <div style={{ textAlign: "center", maxWidth: 1500, padding: "0 100px", transform: `scale(${textScale})` }}>
+          <FadeIn delay={8}>
+            <div style={{ fontFamily: SANS, fontSize: 62, fontWeight: 700, color: C.white, lineHeight: 1.35, marginBottom: 36 }}>
+              We doubled Q4 ad spend.<br />
+              Where's the <span style={{ color: C.cyan, fontStyle: "italic" }}>incremental lift</span>?
+            </div>
+          </FadeIn>
+          <FadeIn delay={50}>
+            <div style={{ fontFamily: SANS, fontSize: 30, color: C.dimmed, lineHeight: 1.6 }}>
+              A vanilla MMM can't decompose incrementality without refitting.
+            </div>
+          </FadeIn>
+          <FadeIn delay={80}>
+            <div style={{ fontFamily: SANS, fontSize: 30, color: C.blue, lineHeight: 1.6, marginTop: 12 }}>
+              decision-lab can.
+            </div>
+          </FadeIn>
+        </div>
+      </AbsoluteFill>
+    </Scene>
+  );
+};
+
+// ═══════════════════════════════════════════
+// SCENE 2: Terminal command typing
+// ═══════════════════════════════════════════
+
+const SceneCommand = () => {
+  const frame = useCurrentFrame();
+
+  const Spinner = () => {
+    const chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    return <span style={{ color: C.cyan, fontSize: 28, fontFamily: FONT }}>{chars[Math.floor(frame / 3) % chars.length]}</span>;
+  };
+
+  return (
+    <Scene>
+      <TerminalChrome>
+        <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
+          <FadeIn delay={8}>
+            <div style={{ fontSize: 32, fontFamily: FONT, marginBottom: 24 }}>
+              <span style={{ color: C.green, fontSize: 32 }}>❯ </span>
+              <TypedText
+                text="dlab --dpack mmm --data ./ad-spend.csv"
+                startFrame={15}
+                speed={0.8}
+                color={C.text}
+                fontSize={32}
+              />
+            </div>
+          </FadeIn>
+
+          {frame >= 70 && (
+            <FadeIn delay={70}>
+              <div style={{ fontSize: 28, fontFamily: FONT, marginTop: 8, marginLeft: 36 }}>
+                <span style={{ color: C.dimmed }}>prompt: </span>
+                <TypedText
+                  text={`"We doubled Q4 spend — where's the incremental lift?"`}
+                  startFrame={78}
+                  speed={0.8}
+                  color={C.white}
+                  fontSize={28}
+                />
+              </div>
+            </FadeIn>
+          )}
+
+          {frame >= 130 && (
+            <FadeIn delay={130}>
+              <div style={{ marginTop: 60, display: "flex", alignItems: "center", gap: 14 }}>
+                <Spinner />
+                <span style={{ color: C.dimmed, fontSize: 24, fontFamily: FONT }}>
+                  Initializing decision-lab session...
+                </span>
+              </div>
+            </FadeIn>
+          )}
+        </div>
+      </TerminalChrome>
+    </Scene>
+  );
+};
+
+// ═══════════════════════════════════════════
+// SCENE 3: Research Plan — text tree
+// ═══════════════════════════════════════════
+
+const SceneResearchPlan = () => {
+  const frame = useCurrentFrame();
+
+  const nodes = [
+    { text: "Load & validate 2 years of weekly spend + revenue", color: C.text, delay: 30 },
+    { text: "Fan out 3 researchers with different strategies", color: C.text, delay: 65 },
+    { text: "Each must pass convergence + posterior predictive checks", color: C.text, delay: 100 },
+    { text: "Consolidate — only trust where paths agree", color: C.text, delay: 135 },
+    { text: `If paths diverge → "insufficient evidence"`, color: C.yellow, delay: 170, isLast: true },
+  ];
+
+  return (
+    <Scene>
+      <TerminalChrome>
+        <FadeIn delay={0}>
+          <div style={{ marginBottom: 36 }}>
+            <Badge label="PI" color={C.blue} icon="🔬" size="lg" />
+            <span style={{ color: C.white, fontWeight: 700, fontSize: 30, fontFamily: FONT }}>
+              Designing research agenda
+            </span>
+          </div>
+        </FadeIn>
+
+        <div style={{ marginLeft: 36, flex: 1 }}>
+          {nodes.map((node, i) => {
+            if (frame < node.delay) return null;
+            const op = interpolate(frame - node.delay, [0, 12], [0, 1], { extrapolateRight: "clamp" });
+            const y = interpolate(frame - node.delay, [0, 12], [18, 0], { extrapolateRight: "clamp" });
+            const connector = node.isLast ? "└─" : "├─";
+            return (
+              <div key={i} style={{ opacity: op, transform: `translateY(${y}px)` }}>
+                {i > 0 && (
+                  <div style={{ color: C.dimmed, fontSize: 28, fontFamily: FONT, paddingLeft: 4, lineHeight: 1.0 }}>│</div>
+                )}
+                <div style={{ display: "flex", alignItems: "flex-start" }}>
+                  <span style={{ color: C.dimmed, fontSize: 28, fontFamily: FONT, marginRight: 16, flexShrink: 0 }}>
+                    {connector}
+                  </span>
+                  <span style={{ color: node.color, fontSize: 27, fontFamily: FONT, lineHeight: 1.5 }}>
+                    {node.text}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {frame >= 210 && (
+          <FadeIn delay={210}>
+            <div style={{ marginTop: 30 }}>
+              <span style={{ color: C.green, fontSize: 26, fontFamily: FONT }}>✓ </span>
+              <span style={{ color: C.white, fontSize: 26, fontWeight: 600, fontFamily: FONT }}>104 weeks</span>
+              <span style={{ color: C.text, fontSize: 26, fontFamily: FONT }}> across </span>
+              <span style={{ color: C.white, fontSize: 26, fontWeight: 600, fontFamily: FONT }}>6 channels</span>
+              <span style={{ color: C.dimmed, fontSize: 22, fontFamily: FONT }}>
+                {" "}— TV, Paid Search, Social, Display, Email, Affiliates
+              </span>
+            </div>
+          </FadeIn>
+        )}
+      </TerminalChrome>
+    </Scene>
+  );
+};
+
+// ═══════════════════════════════════════════
+// SCENE 4: Fan-out Graph — the visual hero
+// Animated SVG with bezier-connected nodes
+// ═══════════════════════════════════════════
+
+const SceneFanOut = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  // Layout constants (1920x1080 canvas)
+  const piX = 760, piY = 60;
+  const r1X = 180, r1Y = 340;
+  const r2X = 710, r2Y = 340;
+  const r3X = 1240, r3Y = 340;
+  const prX = 710, prY = 680;
+
+  const piW = 400, piH = 70;
+  const rW = 420, rH = 100;
+  const prW = 500, prH = 80;
+
+  // Bezier paths from PI to each researcher
+  const pathPI_R1 = `M ${piX + piW / 2} ${piY + piH} C ${piX + piW / 2} ${piY + piH + 80}, ${r1X + rW / 2} ${r1Y - 80}, ${r1X + rW / 2} ${r1Y}`;
+  const pathPI_R2 = `M ${piX + piW / 2} ${piY + piH} C ${piX + piW / 2} ${piY + piH + 100}, ${r2X + rW / 2} ${r2Y - 100}, ${r2X + rW / 2} ${r2Y}`;
+  const pathPI_R3 = `M ${piX + piW / 2} ${piY + piH} C ${piX + piW / 2} ${piY + piH + 80}, ${r3X + rW / 2} ${r3Y - 80}, ${r3X + rW / 2} ${r3Y}`;
+
+  // Paths from researchers to peer review
+  const pathR1_PR = `M ${r1X + rW / 2} ${r1Y + rH} C ${r1X + rW / 2} ${r1Y + rH + 80}, ${prX + prW / 2} ${prY - 80}, ${prX + prW / 2} ${prY}`;
+  const pathR2_PR = `M ${r2X + rW / 2} ${r2Y + rH} C ${r2X + rW / 2} ${r2Y + rH + 100}, ${prX + prW / 2} ${prY - 100}, ${prX + prW / 2} ${prY}`;
+  const pathR3_PR = `M ${r3X + rW / 2} ${r3Y + rH} C ${r3X + rW / 2} ${r3Y + rH + 80}, ${prX + prW / 2} ${prY - 80}, ${prX + prW / 2} ${prY}`;
+
+  // Revision loop path (R2 back to PI and down again)
+  const pathRevision = `M ${r2X + rW + 10} ${r2Y + rH / 2} C ${r2X + rW + 100} ${r2Y + rH / 2}, ${r2X + rW + 100} ${r2Y - 120}, ${r2X + rW / 2 + 50} ${r2Y - 40} L ${r2X + rW / 2 + 50} ${r2Y}`;
+
+  // R2 status
+  const r2Status = frame >= 340
+    ? "✓ CONVERGED"
+    : frame >= 240
+    ? "REVISING..."
+    : frame >= 170
+    ? "✗ DIVERGENT"
+    : frame >= 80
+    ? "SAMPLING"
+    : null;
+  const r2StatusColor = frame >= 340
+    ? C.green
+    : frame >= 240
+    ? C.yellow
+    : frame >= 170
+    ? C.red
+    : C.cyan;
+
+  // R2 border color changes
+  const r2BorderColor = frame >= 340
+    ? C.green
+    : frame >= 170
+    ? C.red
+    : C.orange;
+
+  // Path colors for R2 converging path
+  const r2ConvergeColor = frame >= 340 ? C.green : C.dimmed;
+
+  // Glow pulse on peer review node
+  const prGlow = frame >= 370
+    ? interpolate(Math.sin((frame - 370) * 0.1), [-1, 1], [0.3, 0.8])
+    : 0;
+
+  return (
+    <Scene>
+      <AbsoluteFill>
+        <svg width="1920" height="1080" viewBox="0 0 1920 1080" style={{ position: "absolute", top: 0, left: 0 }}>
+          <defs>
+            <filter id="nodeGlow">
+              <feGaussianBlur stdDeviation="6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="strongGlow">
+              <feGaussianBlur stdDeviation="12" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Title */}
+          {frame >= 0 && (
+            <text
+              x={960} y={40}
+              textAnchor="middle"
+              fontSize={18}
+              fill={C.dimmed}
+              fontFamily={FONT}
+              letterSpacing={4}
+              opacity={interpolate(frame, [0, 20], [0, 1], { extrapolateRight: "clamp" })}
+            >
+              RESEARCH WORKFLOW
+            </text>
+          )}
+
+          {/* ─── Fan-out paths (PI → Researchers) ─── */}
+          <AnimatedPath d={pathPI_R1} color={C.purple} startFrame={40} drawDuration={35} />
+          <AnimatedPath d={pathPI_R2} color={C.orange} startFrame={50} drawDuration={35} />
+          <AnimatedPath d={pathPI_R3} color={C.magenta} startFrame={60} drawDuration={35} />
+
+          {/* ─── Converge paths (Researchers → Peer Review) ─── */}
+          <AnimatedPath d={pathR1_PR} color={C.green} startFrame={200} drawDuration={35} />
+          <AnimatedPath d={pathR2_PR} color={r2ConvergeColor} startFrame={350} drawDuration={30} dashed={frame < 340} />
+          <AnimatedPath d={pathR3_PR} color={C.green} startFrame={210} drawDuration={35} />
+
+          {/* ─── Revision loop (R2 → retry) ─── */}
+          {frame >= 240 && (
+            <AnimatedPath d={pathRevision} color={C.yellow} startFrame={240} drawDuration={40} dashed={true} strokeWidth={2.5} />
+          )}
+          {frame >= 255 && (
+            <text
+              x={r2X + rW + 80} y={r2Y - 30}
+              fontSize={15}
+              fill={C.yellow}
+              fontFamily={FONT}
+              fontWeight={600}
+              opacity={interpolate(frame - 255, [0, 10], [0, 1], { extrapolateRight: "clamp" })}
+            >
+              ↩ revise & retry
+            </text>
+          )}
+
+          {/* ─── PI Node ─── */}
+          <GraphNode
+            x={piX} y={piY}
+            width={piW} height={piH}
+            label="THE PI"
+            sublabel="Orchestrator agent"
+            color={C.blue}
+            icon="🔬"
+            startFrame={5}
+          />
+
+          {/* ─── Researcher Nodes ─── */}
+          <GraphNode
+            x={r1X} y={r1Y}
+            width={rW} height={rH}
+            label="RESEARCHER 1"
+            sublabel="Hierarchical + informative priors"
+            color={C.purple}
+            startFrame={55}
+            status={frame >= 140 ? "✓ CONVERGED" : frame >= 80 ? "SAMPLING" : null}
+            statusColor={frame >= 140 ? C.green : C.cyan}
+          />
+          <GraphNode
+            x={r2X} y={r2Y}
+            width={rW} height={rH}
+            label="RESEARCHER 2"
+            sublabel="Additive + weakly informative"
+            color={C.orange}
+            borderColor={r2BorderColor}
+            startFrame={65}
+            status={r2Status}
+            statusColor={r2StatusColor}
+          />
+          <GraphNode
+            x={r3X} y={r3Y}
+            width={rW} height={rH}
+            label="RESEARCHER 3"
+            sublabel="Saturating + flat priors + events"
+            color={C.magenta}
+            startFrame={75}
+            status={frame >= 150 ? "✓ CONVERGED" : frame >= 80 ? "SAMPLING" : null}
+            statusColor={frame >= 150 ? C.green : C.cyan}
+          />
+
+          {/* ─── Peer Review Node ─── */}
+          {frame >= 200 && (
+            <>
+              {prGlow > 0 && (
+                <rect
+                  x={prX - 6} y={prY - 6}
+                  width={prW + 12} height={prH + 12}
+                  rx={18}
+                  fill="none"
+                  stroke={C.green}
+                  strokeWidth={2}
+                  opacity={prGlow}
+                  filter="url(#strongGlow)"
+                />
+              )}
+              <GraphNode
+                x={prX} y={prY}
+                width={prW} height={prH}
+                label="PEER REVIEW"
+                sublabel="Consolidate all analytical paths"
+                color={C.green}
+                icon="⚖"
+                startFrame={200}
+                status={frame >= 380 ? "CONSENSUS" : frame >= 370 ? "REVIEWING" : null}
+                statusColor={frame >= 380 ? C.green : C.cyan}
+              />
+            </>
+          )}
+
+          {/* ─── Failure callout ─── */}
+          {frame >= 175 && frame < 240 && (
+            <g opacity={interpolate(frame - 175, [0, 10], [0, 1], { extrapolateRight: "clamp" })}>
+              <rect
+                x={r2X + rW / 2 - 180} y={r2Y + rH + 16}
+                width={360} height={40}
+                rx={8}
+                fill={`${C.red}25`}
+                stroke={`${C.red}60`}
+                strokeWidth={1.5}
+              />
+              <text
+                x={r2X + rW / 2} y={r2Y + rH + 42}
+                textAnchor="middle"
+                fontSize={16}
+                fontWeight={700}
+                fill={C.red}
+                fontFamily={FONT}
+              >
+                ✗ PPC FAILED — under-predicts holidays by 22%
+              </text>
+            </g>
+          )}
+
+          {/* ─── Verdict ─── */}
+          {frame >= 390 && (
+            <g opacity={interpolate(frame - 390, [0, 15], [0, 1], { extrapolateRight: "clamp" })}>
+              <rect
+                x={prX + prW / 2 - 240} y={prY + prH + 20}
+                width={480} height={50}
+                rx={10}
+                fill={`${C.blue}15`}
+                stroke={`${C.blue}50`}
+                strokeWidth={1.5}
+              />
+              <text
+                x={prX + prW / 2} y={prY + prH + 52}
+                textAnchor="middle"
+                fontSize={20}
+                fontWeight={700}
+                fill={C.white}
+                fontFamily={FONT}
+              >
+                Strong consensus — recommendation is robust
+              </text>
+            </g>
+          )}
+
+          {/* ─── Analysis stats ─── */}
+          {frame >= 400 && (
+            <text
+              x={960} y={prY + prH + 100}
+              textAnchor="middle"
+              fontSize={16}
+              fill={C.dimmed}
+              fontFamily={FONT}
+              opacity={interpolate(frame - 400, [0, 15], [0, 1], { extrapolateRight: "clamp" })}
+            >
+              3 models · 24,000 posterior samples · 6 channels decomposed
+            </text>
+          )}
+        </svg>
+      </AbsoluteFill>
+    </Scene>
+  );
+};
+
+// ═══════════════════════════════════════════
+// SCENE 5: Results — chart + findings
+// ═══════════════════════════════════════════
+
+const SceneResults = () => {
+  const frame = useCurrentFrame();
+
+  const data = [
+    { label: "Paid Search", value: 34, pct: "34%", color: C.green, note: "ROAS 4.2x ↑", noteColor: C.green },
+    { label: "TV", value: 24, pct: "24%", color: C.cyan, note: "no Q4 lift ↓", noteColor: C.yellow },
+    { label: "Social", value: 15, pct: "15%", color: C.magenta, note: "growing ↑", noteColor: C.green },
+    { label: "Email", value: 13, pct: "13%", color: C.blue },
+    { label: "Display", value: 9, pct: "9%", color: C.orange, note: "ROAS 0.8x ↓", noteColor: C.red },
+    { label: "Affiliates", value: 5, pct: "5%", color: C.dimmed },
+  ];
+  const maxVal = Math.max(...data.map((d) => d.value));
+  const barMaxWidth = 700;
+
+  return (
+    <Scene>
+      <TerminalChrome>
+        <FadeIn delay={0}>
+          <div style={{
+            color: C.white,
+            fontWeight: 700,
+            fontSize: 30,
+            fontFamily: FONT,
+            borderBottom: `3px solid ${C.blue}`,
+            paddingBottom: 8,
+            marginBottom: 30,
+            display: "inline-block",
+          }}>
+            Channel Contribution — Consensus Across 3 Models
+          </div>
+        </FadeIn>
+
+        <div style={{ marginLeft: 10, marginBottom: 28 }}>
+          {data.map((d, i) => {
+            const delay = 20 + i * 12;
+            if (frame < delay) return null;
+            const elapsed = frame - delay;
+            const barProgress = interpolate(elapsed, [0, 30], [0, 1], {
               extrapolateLeft: "clamp",
               extrapolateRight: "clamp",
-            }),
-            zIndex: 20,
-          }}
-        >
-          <div
-            style={{
-              fontSize: "52px",
-              fontWeight: 800,
-              color: C.white,
-              letterSpacing: "-1px",
-              marginBottom: "16px",
-            }}
-          >
-            decision-lab
-          </div>
-          <div
-            style={{
-              fontSize: "20px",
-              color: C.dimmed,
-              marginBottom: "40px",
-              fontStyle: "italic",
-            }}
-          >
-            Science-grade rigor. Startup-grade speed.
-          </div>
-          <div style={{ fontSize: "16px", color: C.blue, letterSpacing: "2px" }}>
-            AGENTIC DECISION SCIENCE
-          </div>
-          <div style={{ fontSize: "14px", color: C.dimmed, marginTop: "30px" }}>
-            pip install dlab-cli
-          </div>
-          <div style={{ fontSize: "13px", color: C.dimmed, marginTop: "10px" }}>
-            github.com/pymc-labs/decision-lab
-          </div>
+            });
+            const barWidth = (d.value / maxVal) * barMaxWidth * barProgress;
+            const op = interpolate(elapsed, [0, 10], [0, 1], { extrapolateRight: "clamp" });
+            return (
+              <div
+                key={d.label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  marginBottom: 14,
+                  opacity: op,
+                }}
+              >
+                <span style={{ color: C.dimmed, width: 180, textAlign: "right", marginRight: 18, fontSize: 22, fontFamily: FONT }}>
+                  {d.label}
+                </span>
+                <div
+                  style={{
+                    height: 34,
+                    width: `${barWidth}px`,
+                    background: `linear-gradient(90deg, ${d.color}aa, ${d.color})`,
+                    borderRadius: 5,
+                  }}
+                />
+                <span style={{ color: C.white, marginLeft: 14, fontSize: 22, fontWeight: 700, fontFamily: FONT, opacity: barProgress > 0.8 ? 1 : 0 }}>
+                  {d.pct}
+                </span>
+                {d.note && barProgress > 0.9 && (
+                  <span style={{ color: d.noteColor || C.dimmed, marginLeft: 14, fontSize: 18, fontFamily: FONT }}>
+                    {d.note}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
-      )}
-    </div>
+
+        {/* Key Finding */}
+        {frame >= 130 && (
+          <FadeIn delay={130}>
+            <div style={{
+              background: `${C.blue}12`,
+              border: `1.5px solid ${C.blue}50`,
+              borderRadius: 10,
+              padding: "18px 24px",
+              marginBottom: 18,
+            }}>
+              <div style={{ color: C.white, fontWeight: 700, fontSize: 24, fontFamily: FONT, marginBottom: 10 }}>
+                Key Finding
+              </div>
+              <TypedText
+                text="Q4 TV spend hit saturation — doubling the budget added only 8% incremental revenue. Paid Search still has 2.3x headroom."
+                startFrame={140}
+                speed={1.1}
+                color={C.text}
+                fontSize={22}
+              />
+            </div>
+          </FadeIn>
+        )}
+
+        {/* Recommendation */}
+        {frame >= 220 && (
+          <FadeIn delay={220}>
+            <div style={{
+              background: `${C.green}12`,
+              border: `1.5px solid ${C.green}50`,
+              borderRadius: 10,
+              padding: "18px 24px",
+            }}>
+              <div style={{ color: C.green, fontWeight: 700, fontSize: 24, fontFamily: FONT, marginBottom: 10 }}>
+                Recommendation
+              </div>
+              <TypedText
+                text="Shift 30% of TV budget → Paid Search & Social. Revenue impact: +19% (95% CI: +12% to +27%)."
+                startFrame={230}
+                speed={1.1}
+                color={C.text}
+                fontSize={22}
+              />
+            </div>
+          </FadeIn>
+        )}
+      </TerminalChrome>
+    </Scene>
+  );
+};
+
+// ═══════════════════════════════════════════
+// SCENE 6: Outro
+// ═══════════════════════════════════════════
+
+const SceneOutro = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const titleScale = spring({ frame: frame - 5, fps, config: { damping: 80, stiffness: 140, mass: 0.8 } });
+  const glowIntensity = interpolate(Math.sin(frame * 0.07), [-1, 1], [10, 40]);
+
+  return (
+    <Scene fadeOut={false}>
+      <AbsoluteFill style={{ justifyContent: "center", alignItems: "center" }}>
+        <div
+          style={{
+            position: "absolute",
+            width: 900,
+            height: 900,
+            borderRadius: "50%",
+            background: `radial-gradient(circle, rgba(88,166,255,${glowIntensity / 500}) 0%, transparent 70%)`,
+            filter: `blur(${glowIntensity * 2}px)`,
+          }}
+        />
+
+        <div style={{ textAlign: "center", transform: `scale(${titleScale})` }}>
+          <FadeIn delay={5}>
+            <div style={{ fontSize: 86, fontWeight: 800, color: C.white, letterSpacing: -2, fontFamily: FONT, marginBottom: 28 }}>
+              decision-lab
+            </div>
+          </FadeIn>
+
+          <FadeIn delay={25}>
+            <div style={{ fontSize: 34, color: C.dimmed, fontStyle: "italic", fontFamily: SANS, marginBottom: 55 }}>
+              Your data deserves a peer review, not a guess.
+            </div>
+          </FadeIn>
+
+          <FadeIn delay={45}>
+            <div style={{ fontSize: 24, color: C.blue, letterSpacing: 4, fontFamily: SANS, fontWeight: 600, marginBottom: 55 }}>
+              AGENTIC DATA SCIENCE
+            </div>
+          </FadeIn>
+
+          <FadeIn delay={65}>
+            <div style={{ fontSize: 22, color: C.dimmed, fontFamily: FONT, marginBottom: 16 }}>
+              pip install dlab-cli
+            </div>
+            <div style={{ fontSize: 20, color: C.dimmed, fontFamily: FONT }}>
+              github.com/pymc-labs/decision-lab
+            </div>
+          </FadeIn>
+        </div>
+      </AbsoluteFill>
+    </Scene>
+  );
+};
+
+// ═══════════════════════════════════════════
+// MAIN COMPOSITION — 50s total
+// ═══════════════════════════════════════════
+
+export const DecisionLabDemo = () => {
+  return (
+    <AbsoluteFill style={{ backgroundColor: C.bg }}>
+      {/* Scene 1: Hook (0-5s) */}
+      <Sequence from={0} durationInFrames={150}>
+        <SceneHook />
+      </Sequence>
+
+      {/* Scene 2: Terminal command (5-10.5s) */}
+      <Sequence from={150} durationInFrames={165}>
+        <SceneCommand />
+      </Sequence>
+
+      {/* Scene 3: Research Plan tree (10.5-19s) */}
+      <Sequence from={315} durationInFrames={255}>
+        <SceneResearchPlan />
+      </Sequence>
+
+      {/* Scene 4: Fan-out Graph — the hero scene (19-34s) */}
+      <Sequence from={570} durationInFrames={450}>
+        <SceneFanOut />
+      </Sequence>
+
+      {/* Scene 5: Results chart + findings (34-45s) */}
+      <Sequence from={1020} durationInFrames={330}>
+        <SceneResults />
+      </Sequence>
+
+      {/* Scene 6: Outro (45-50s) */}
+      <Sequence from={1350} durationInFrames={150}>
+        <SceneOutro />
+      </Sequence>
+    </AbsoluteFill>
   );
 };
